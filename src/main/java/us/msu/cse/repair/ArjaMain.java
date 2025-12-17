@@ -1,6 +1,7 @@
 package us.msu.cse.repair;
 
 import java.util.HashMap;
+import java.util.TimeZone;
 
 import jmetal.operators.crossover.Crossover;
 import jmetal.operators.mutation.Mutation;
@@ -12,8 +13,18 @@ import us.msu.cse.repair.ec.operators.crossover.ExtendedCrossoverFactory;
 import us.msu.cse.repair.ec.operators.mutation.ExtendedMutationFactory;
 import us.msu.cse.repair.ec.problems.ArjaProblem;
 
+/**
+ * 修改说明：将原始基于 Java 7 的实现升级到 Java 11
+ * 修改时间：2024-12-19
+ * 修改原因：支持 Defects4J v3.0.1 要求 Java 11 环境
+ * 主要改动：
+ * 1. 添加时区设置以匹配 Defects4J v3.0.1 要求
+ */
 public class ArjaMain {
 	public static void main(String args[]) throws Exception {
+		// 设置时区以匹配 Defects4J v3.0.1 要求
+		TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
+		
 		HashMap<String, String> parameterStrs = Interpreter.getParameterStrings(args);
 		HashMap<String, Object> parameters = Interpreter.getBasicParameterSetting(parameterStrs);
 
@@ -21,6 +32,22 @@ public class ArjaMain {
 		if (ingredientScreenerNameS != null) 
 			parameters.put("ingredientScreenerName", ingredientScreenerNameS);
 		
+		// Novelty Search 参数
+		String noveltySearchModeS = parameterStrs.get("noveltySearchMode");
+		if (noveltySearchModeS != null)
+			parameters.put("noveltySearchMode", noveltySearchModeS);
+		
+		String noveltyKNeighborsS = parameterStrs.get("noveltyKNeighbors");
+		if (noveltyKNeighborsS != null)
+			parameters.put("noveltyKNeighbors", Integer.parseInt(noveltyKNeighborsS));
+		
+		String noveltyArchiveSizeS = parameterStrs.get("noveltyArchiveSize");
+		if (noveltyArchiveSizeS != null)
+			parameters.put("noveltyArchiveSize", Integer.parseInt(noveltyArchiveSizeS));
+		
+		String noveltyDiversityWeightS = parameterStrs.get("noveltyDiversityWeight");
+		if (noveltyDiversityWeightS != null)
+			parameters.put("noveltyDiversityWeight", Double.parseDouble(noveltyDiversityWeightS));
 		
 		int populationSize = 40;
 		int maxGenerations = 50;

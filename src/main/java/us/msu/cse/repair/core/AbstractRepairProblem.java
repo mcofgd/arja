@@ -298,11 +298,17 @@ public abstract class AbstractRepairProblem extends Problem {
 	void invokeFaultLocalizer() throws FileNotFoundException, IOException {
 		System.out.println("Fault localization starts...");
 		IFaultLocalizer faultLocalizer;
-		if (gzoltarDataDir == null)
-			faultLocalizer = new GZoltarFaultLocalizer(binJavaClasses, binExecuteTestClasses, binJavaDir, binTestDir,
-					dependences);
-		else
+		
+		// ✅ 使用 Defects4JFaultLocalizer 替代 GZoltar（Java 11 兼容）
+		if (gzoltarDataDir == null) {
+			System.out.println("Using Defects4JFaultLocalizer (Java 11 compatible)");
+			System.out.println("  externalProjRoot: " + externalProjRoot);
+			faultLocalizer = new Defects4JFaultLocalizer(binJavaClasses, binExecuteTestClasses, binJavaDir, binTestDir,
+					dependences, externalProjRoot);
+		} else {
+			System.out.println("Using GZoltarFaultLocalizer2 with pre-computed data");
 			faultLocalizer = new GZoltarFaultLocalizer2(gzoltarDataDir);
+		}
 
 		faultyLines = faultLocalizer.searchSuspicious(thr);
 
@@ -314,6 +320,23 @@ public abstract class AbstractRepairProblem extends Problem {
 
 		System.out.println("Number of positive tests: " + positiveTests.size());
 		System.out.println("Number of negative tests: " + negativeTests.size());
+		// ✅ 增强日志：输出故障定位找到的可疑行
+		System.out.println("Number of faulty lines found: " + faultyLines.size());
+		if (faultyLines.isEmpty()) {
+			System.err.println("WARNING: No faulty lines found by fault localizer!");
+			System.err.println("  This will result in 0 modification points.");
+			System.err.println("  Check if:");
+			System.err.println("    1. GZoltar is working correctly");
+			System.err.println("    2. The threshold (thr=" + thr + ") is too high");
+			System.err.println("    3. The test cases are running properly");
+		} else {
+			System.out.println("Top 10 faulty lines:");
+			int count = 0;
+			for (Map.Entry<LCNode, Double> entry : faultyLines.entrySet()) {
+				System.out.println("  " + entry.getKey() + " -> suspiciousness: " + entry.getValue());
+				if (++count >= 10) break;
+			}
+		}
 		System.out.println("Fault localization is finished!");
 	}
 
@@ -340,6 +363,8 @@ public abstract class AbstractRepairProblem extends Problem {
 		FileASTRequestorImpl requestor = new FileASTRequestorImpl(faultyLines, seedLines, modificationPoints,
 				seedStatements, sourceASTs, sourceContents, declaredClasses);
 
+		// ✅ Java 11 兼容性修复：Eclipse JDT 3.10.0 最高支持 JLS8 (Java 8)
+		// 虽然使用 JLS8，但配合 Java 11 编译选项仍可正常工作
 		ASTParser parser = ASTParser.newParser(AST.JLS8);
 		String[] classpathEntries = null;
 		if (dependences != null)
@@ -350,7 +375,9 @@ public abstract class AbstractRepairProblem extends Problem {
 		parser.setBindingsRecovery(true);
 
 		Map options = JavaCore.getOptions();
-		JavaCore.setComplianceOptions(JavaCore.VERSION_1_7, options);
+		// ✅ Java 11 兼容性修复：Eclipse JDT 3.10.0 最高支持 VERSION_1_8
+		// 使用 VERSION_1_8 配合 Java 11 编译器选项可以正常工作
+		JavaCore.setComplianceOptions(JavaCore.VERSION_1_8, options);
 		parser.setCompilerOptions(options);
 
 		File srcFile = new File(srcJavaDir);
@@ -488,7 +515,11 @@ public abstract class AbstractRepairProblem extends Problem {
 		compilerOptions = new ArrayList<String>();
 		compilerOptions.add("-nowarn");
 		compilerOptions.add("-source");
-		compilerOptions.add("1.7");
+		// ✅ Java 11 兼容性修复：使用 "11" 替代 "1.7"
+		compilerOptions.add("11");
+		compilerOptions.add("-target");
+		// ✅ Java 11 兼容性修复：添加 target 版本
+		compilerOptions.add("11");
 		compilerOptions.add("-cp");
 		String cpStr = binJavaDir;
 
@@ -510,12 +541,24 @@ public abstract class AbstractRepairProblem extends Problem {
 	}
 
 	void invokeModificationPointsTrimmer() {
+		// ✅ 修复：不删除没有ingredients的修改点，保留所有操作
+		// 这样即使ingredient screening失败，仍然可以进行Delete操作
+		System.out.println("Modification points trimmer starts...");
+		System.out.println("  Total modification points before trimming: " + modificationPoints.size());
+		
 		int i = 0;
+		int keptWithoutIngredients = 0;
+		
 		while (i < modificationPoints.size()) {
 			ModificationPoint mp = modificationPoints.get(i);
 			List<String> manips = availableManipulations.get(i);
 
 			if (mp.getIngredients().isEmpty()) {
+				// ✅ 关键修复：保留Delete操作，不删除修改点
+				// 即使没有ingredients，Delete操作仍然有效
+				keptWithoutIngredients++;
+				
+				// 只保留Delete操作（因为Replace/Insert需要ingredients）
 				Iterator<String> iter = manips.iterator();
 				while (iter.hasNext()) {
 					String manipName = iter.next();
@@ -524,12 +567,18 @@ public abstract class AbstractRepairProblem extends Problem {
 				}
 			}
 
+			// ✅ 关键修复：即使manips为空也不删除修改点
+			// 让后续流程决定如何处理
 			if (manips.isEmpty()) {
-				modificationPoints.remove(i);
-				availableManipulations.remove(i);
-			} else
-				i++;
+				// 不删除，只是标记
+				System.out.println("  Warning: MP at " + mp.getLCNode() + " has no available manipulations");
+			}
+			i++;
 		}
+		
+		System.out.println("  Total modification points after trimming: " + modificationPoints.size());
+		System.out.println("  Modification points without ingredients: " + keptWithoutIngredients);
+		System.out.println("Modification points trimmer is finished!");
 	}
 
 	protected Map<String, String> getModifiedJavaSources(Map<String, ASTRewrite> astRewriters) {
@@ -577,10 +626,18 @@ public abstract class AbstractRepairProblem extends Problem {
 			boolean isCompiled = compiler.compile(javaSources);
 			if (isCompiled)
 				return compiler.getClassLoader().getCompiledClasses();
-			else
+			else {
+				// ✅ 增强错误日志：输出编译错误详情
+				System.err.println("Compilation failed with the following errors:");
+				List<String> errors = compiler.getErrors();
+				for (String error : errors) {
+					System.err.println("  " + error);
+				}
 				return null;
+			}
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
+			System.err.println("Exception during compilation:");
 			e.printStackTrace();
 		}
 		return null;

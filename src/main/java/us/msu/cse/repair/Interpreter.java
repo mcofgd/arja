@@ -9,6 +9,14 @@ import java.util.Set;
 import jmetal.util.JMException;
 import jmetal.util.PseudoRandom;
 
+/**
+ * 修改说明：将原始基于 Java 7 的实现升级到 Java 11
+ * 修改时间：2024-12-19
+ * 修改原因：支持 Defects4J v3.0.1 要求 Java 11 环境
+ * 主要改动：
+ * 1. 反射访问可能需要 JVM 参数 --add-opens java.base/java.util=ALL-UNNAMED
+ * 2. 保持向后兼容性
+ */
 public class Interpreter {
 	
 	public static HashMap<String, Object> getBasicParameterSetting(Map<String, String> parameterStrs) {
@@ -93,6 +101,12 @@ public class Interpreter {
 			parameters.put("diffFormat", diffFormat);
 		}
 
+		String testFilteredS = parameterStrs.get("testFiltered");
+		if (testFilteredS != null) {
+			boolean testFiltered = Boolean.parseBoolean(testFilteredS);
+			parameters.put("testFiltered", testFiltered);
+		}
+
 		String seed_str = parameterStrs.get("seed");
 		double seed = 0.0;
 		if (seed_str != null) {
@@ -101,6 +115,9 @@ public class Interpreter {
 		try {
 			PseudoRandom.randDouble();
 
+			// Java 11 模块系统兼容性：反射访问可能需要 --add-opens JVM 参数
+			// 如果遇到 IllegalAccessException，请在运行时添加：
+			// --add-opens java.base/java.util=ALL-UNNAMED
 			Field random_1 = PseudoRandom.class.getDeclaredField("random_");
 			random_1.setAccessible(true);
 			Object random_ = random_1.get(null);
@@ -108,6 +125,8 @@ public class Interpreter {
 			seed_field.setAccessible(true);
 			seed_field.set(random_, seed);
 		} catch (Exception e) {
+			// 如果反射访问失败，可能是由于 Java 11 模块系统限制
+			// 建议在运行时添加 --add-opens 参数
 			e.printStackTrace();
 		}
 

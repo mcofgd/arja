@@ -23,6 +23,8 @@ import jmetal.util.Configuration;
 import jmetal.util.JMException;
 import us.msu.cse.repair.core.AbstractRepairProblem;
 import us.msu.cse.repair.core.filterrules.MIFilterRule;
+import us.msu.cse.repair.core.novelty.BehaviorArchive;
+import us.msu.cse.repair.core.novelty.BehaviorDescriptor;
 import us.msu.cse.repair.core.parser.ModificationPoint;
 import us.msu.cse.repair.core.testexecutors.ITestExecutor;
 import us.msu.cse.repair.core.util.IO;
@@ -39,6 +41,16 @@ public class ArjaProblem extends AbstractRepairProblem {
 	String initializationStrategy;
 
 	Boolean miFilterRule;
+	
+	// Novelty Search 相关参数
+	String noveltySearchMode;  // "none", "lightweight", "full"
+	Integer noveltyKNeighbors;  // k-近邻的 k 值
+	Integer noveltyArchiveSize;  // 行为档案大小
+	Double noveltyDiversityWeight;  // 多样性权重（用于 lightweight 模式）
+	
+	// Novelty Search 相关对象
+	BehaviorArchive behaviorArchive;
+	Set<String> allTests;  // 所有测试用例（正测试+负测试）
 
 	public ArjaProblem(Map<String, Object> parameters) throws Exception {
 		super(parameters);
@@ -64,8 +76,34 @@ public class ArjaProblem extends AbstractRepairProblem {
 			miFilterRule = true;
 
 		maxNumberOfEdits = (Integer) parameters.get("maxNumberOfEdits");
+		
+		// 初始化 Novelty Search 参数
+		noveltySearchMode = (String) parameters.get("noveltySearchMode");
+		if (noveltySearchMode == null)
+			noveltySearchMode = "none";
+		
+		noveltyKNeighbors = (Integer) parameters.get("noveltyKNeighbors");
+		if (noveltyKNeighbors == null)
+			noveltyKNeighbors = 15;
+		
+		noveltyArchiveSize = (Integer) parameters.get("noveltyArchiveSize");
+		if (noveltyArchiveSize == null)
+			noveltyArchiveSize = 200;
+		
+		noveltyDiversityWeight = (Double) parameters.get("noveltyDiversityWeight");
+		if (noveltyDiversityWeight == null)
+			noveltyDiversityWeight = 0.3;
 
 		setProblemParams();
+		
+		// 初始化行为档案（如果启用 Novelty Search）
+		if (!noveltySearchMode.equalsIgnoreCase("none")) {
+			behaviorArchive = new BehaviorArchive(noveltyArchiveSize);
+			// 合并所有测试用例
+			allTests = new java.util.HashSet<String>();
+			allTests.addAll(positiveTests);
+			allTests.addAll(negativeTests);
+		}
 	}
 
 	void setProblemParams() throws JMException {
@@ -119,22 +157,31 @@ public class ArjaProblem extends AbstractRepairProblem {
 		for (int i = 0; i < size; i++) {
 			if (bits.get(i)) {
 				double suspValue = modificationPoints.get(i).getSuspValue();
+				
+				// 检查是否有可用的操作
+				List<String> availableManips = availableManipulations.get(i);
+				if (availableManips == null || availableManips.isEmpty()) {
+					// 没有可用操作，跳过此修改点
+					bits.set(i, false);
+					continue;
+				}
+				
 				if (miFilterRule) {
-					String manipName = availableManipulations.get(i).get(array[i]);
+					String manipName = availableManips.get(array[i]);
 					ModificationPoint mp = modificationPoints.get(i);
 
 					Statement seed = null;
 					if (!mp.getIngredients().isEmpty())
 						seed = mp.getIngredients().get(array[i + size]);
 					
-					int index = MIFilterRule.canFiltered(manipName, seed, modificationPoints.get(i));				 
+					int index = MIFilterRule.canFiltered(manipName, seed, modificationPoints.get(i));
 					if (index == -1)
 						selectedMP.put(i, suspValue);
 					else if (index < mp.getIngredients().size()) {
 						array[i + size] = index;
 						selectedMP.put(i, suspValue);
 					}
-					else 
+					else
 						bits.set(i, false);
 				} else
 					selectedMP.put(i, suspValue);
@@ -143,6 +190,14 @@ public class ArjaProblem extends AbstractRepairProblem {
 
 		if (selectedMP.isEmpty()) {
 			assignMaxObjectiveValues(solution);
+			// ✅ 增强日志：输出为什么没有选中修改点
+			System.out.println("No modification points selected, skipping evaluation");
+			System.out.println("  Total modification points: " + size);
+			System.out.println("  Bits set: " + bits.cardinality());
+			System.out.println("  miFilterRule enabled: " + miFilterRule);
+			if (miFilterRule) {
+				System.out.println("  Suggestion: Try disabling miFilterRule (-DmiFilterRule false)");
+			}
 			return;
 		}
 
@@ -167,21 +222,31 @@ public class ArjaProblem extends AbstractRepairProblem {
 			bits.set(list.get(i).getKey(), false);
 
 		Map<String, String> modifiedJavaSources = getModifiedJavaSources(astRewriters);
+		System.out.println("Compiling modified sources...");
 		Map<String, JavaFileObject> compiledClasses = getCompiledClassesForTestExecution(modifiedJavaSources);
 
 		boolean status = false;
 		if (compiledClasses != null) {
-			if (numberOfObjectives == 2 || numberOfObjectives == 3)
+			System.out.println("Compilation successful, starting test execution...");
+			// 设置编辑数量目标（如果不是 full NS 模式，或者目标数量>=2）
+			if (!noveltySearchMode.equalsIgnoreCase("full") && (numberOfObjectives == 2 || numberOfObjectives == 3)) {
 				solution.setObjective(0, numberOfEdits);
+			} else if (noveltySearchMode.equalsIgnoreCase("full") && numberOfObjectives >= 2) {
+				// full 模式下，目标0是编辑数量
+				solution.setObjective(0, numberOfEdits);
+			}
 			try {
+				System.out.println("Invoking test executor...");
 				status = invokeTestExecutor(compiledClasses, solution);
+				System.out.println("Test execution completed, status: " + status);
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
+				System.err.println("Exception during test execution: " + e.getMessage());
 				e.printStackTrace();
 			}
 		} else {
 			assignMaxObjectiveValues(solution);
-			System.out.println("Compilation fails!");
+			System.out.println("Compilation fails! (This is normal for some individuals)");
 		}
 
 		if (status) {
@@ -243,9 +308,12 @@ public class ArjaProblem extends AbstractRepairProblem {
 
 	boolean invokeTestExecutor(Map<String, JavaFileObject> compiledClasses, Solution solution) throws Exception {
 		Set<String> samplePosTests = getSamplePositiveTests();
+		System.out.println("Getting test executor, sample tests: " + samplePosTests.size());
 		ITestExecutor testExecutor = getTestExecutor(compiledClasses, samplePosTests);
+		System.out.println("Test executor created, running tests (waitTime: " + waitTime + "ms)...");
 
 		boolean status = testExecutor.runTests();
+		System.out.println("Tests run completed, status: " + status + ", exceptional: " + testExecutor.isExceptional());
 
 		if (status && percentage != null && percentage < 1) {
 			testExecutor = getTestExecutor(compiledClasses, positiveTests);
@@ -258,15 +326,106 @@ public class ArjaProblem extends AbstractRepairProblem {
 			double fitness = weight * testExecutor.getRatioOfFailuresInPositive()
 					+ testExecutor.getRatioOfFailuresInNegative();
 			
+			// 计算行为描述符（如果启用 Novelty Search）
+			BehaviorDescriptor behaviorDescriptor = null;
+			if (!noveltySearchMode.equalsIgnoreCase("none")) {
+				try {
+					Set<String> failedTests = testExecutor.getFailedTests();
+					if (failedTests == null) {
+						System.out.println("Warning: getFailedTests() returned null, using empty set");
+						failedTests = new java.util.HashSet<String>();
+					}
+					behaviorDescriptor = new BehaviorDescriptor(allTests, failedTests);
+					
+					// 将行为描述符添加到档案
+					behaviorArchive.add(behaviorDescriptor);
+				} catch (Exception e) {
+					System.err.println("Error creating behavior descriptor: " + e.getMessage());
+					e.printStackTrace();
+					// 继续使用原始适应度，不中断执行
+				}
+			}
+			
 			System.out.println("Number of failed tests: "
 					+ (testExecutor.getFailureCountInNegative() + testExecutor.getFailureCountInPositive()));
 			System.out.println("Weighted failure rate: " + fitness);
 			
-			if (numberOfObjectives == 1 || numberOfObjectives == 2) 
-				solution.setObjective(numberOfObjectives - 1, fitness);
-			else {
-				solution.setObjective(1, ratioOfFailuresInPositive);
-				solution.setObjective(2, ratioOfFailuresInNegative);
+			// 根据 Novelty Search 模式设置目标值
+			if (noveltySearchMode.equalsIgnoreCase("full")) {
+				// 完全使用 Novelty Search：使用负的 Novelty Score 作为适应度（越大越好）
+				if (behaviorDescriptor != null) {
+					try {
+						double noveltyScore = behaviorArchive.computeNoveltyScore(behaviorDescriptor, noveltyKNeighbors);
+						// 转换为最小化问题（负号）
+						double noveltyFitness = -noveltyScore;
+						
+						if (numberOfObjectives == 1) {
+							solution.setObjective(0, noveltyFitness);
+						} else if (numberOfObjectives == 2) {
+							// 目标0：编辑数量，目标1：负的 Novelty Score
+							solution.setObjective(1, noveltyFitness);
+						} else {
+							// 目标0：编辑数量，目标1：负的 Novelty Score，目标2：保留原始适应度作为参考
+							solution.setObjective(1, noveltyFitness);
+							solution.setObjective(2, fitness);
+						}
+						
+						System.out.println("Novelty Score: " + noveltyScore);
+					} catch (Exception e) {
+						System.err.println("Error computing novelty score: " + e.getMessage());
+						e.printStackTrace();
+						assignMaxObjectiveValues(solution);
+					}
+				} else {
+					System.err.println("Error: behaviorDescriptor is null in full NS mode");
+					assignMaxObjectiveValues(solution);
+				}
+			} else if (noveltySearchMode.equalsIgnoreCase("lightweight")) {
+				// 轻量级模式：在适应度基础上加入多样性惩罚项
+				if (behaviorDescriptor != null) {
+					try {
+						double noveltyScore = behaviorArchive.computeNoveltyScore(behaviorDescriptor, noveltyKNeighbors);
+						// 多样性越高，惩罚越小（1 - noveltyScore 作为奖励）
+						double diversityBonus = (1.0 - noveltyScore) * noveltyDiversityWeight;
+						double adjustedFitness = fitness - diversityBonus;
+						
+						if (numberOfObjectives == 1 || numberOfObjectives == 2) 
+							solution.setObjective(numberOfObjectives - 1, adjustedFitness);
+						else {
+							solution.setObjective(1, ratioOfFailuresInPositive);
+							solution.setObjective(2, ratioOfFailuresInNegative);
+						}
+						
+						System.out.println("Novelty Score: " + noveltyScore + ", Diversity Bonus: " + diversityBonus);
+					} catch (Exception e) {
+						System.err.println("Error computing novelty score: " + e.getMessage());
+						e.printStackTrace();
+						// 回退到原始适应度
+						if (numberOfObjectives == 1 || numberOfObjectives == 2) 
+							solution.setObjective(numberOfObjectives - 1, fitness);
+						else {
+							solution.setObjective(1, ratioOfFailuresInPositive);
+							solution.setObjective(2, ratioOfFailuresInNegative);
+						}
+					}
+				} else {
+					// behaviorDescriptor 为 null，使用原始适应度
+					System.out.println("Warning: behaviorDescriptor is null, using original fitness");
+					if (numberOfObjectives == 1 || numberOfObjectives == 2) 
+						solution.setObjective(numberOfObjectives - 1, fitness);
+					else {
+						solution.setObjective(1, ratioOfFailuresInPositive);
+						solution.setObjective(2, ratioOfFailuresInNegative);
+					}
+				}
+			} else {
+				// 原始模式：使用标准适应度
+				if (numberOfObjectives == 1 || numberOfObjectives == 2) 
+					solution.setObjective(numberOfObjectives - 1, fitness);
+				else {
+					solution.setObjective(1, ratioOfFailuresInPositive);
+					solution.setObjective(2, ratioOfFailuresInNegative);
+				}
 			}
 		} else {
 			assignMaxObjectiveValues(solution);

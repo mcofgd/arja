@@ -10,6 +10,14 @@ import java.util.Set;
 import us.msu.cse.repair.core.util.ProcessWithTimeout;
 import us.msu.cse.repair.core.util.StreamReaderThread;
 
+/**
+ * 修改说明：将原始基于 Java 7 的实现升级到 Java 11
+ * 修改时间：2024-12-19
+ * 修改原因：支持 Defects4J v3.0.1 要求 Java 11 环境
+ * 主要改动：
+ * 1. 已包含时区环境变量设置（TZ=America/Los_Angeles）
+ * 2. 与 Defects4J v3.0.1 兼容
+ */
 public class ExternalTestExecutor implements ITestExecutor {
 	String binJavaDir;
 	String binTestDir;

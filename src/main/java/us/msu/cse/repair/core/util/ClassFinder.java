@@ -83,7 +83,7 @@ public class ClassFinder {
 			String temp = relative.replace("/", ".");
 			String className = temp.substring(0, temp.length() - 6);
 
-			Class<?> target = classLoader.loadClass(className);
+			Class<?> target = SafeClassLoader.loadClass(className, classLoader);
 
 			if (JUnitIdentifier.isJUnitTest(target)) {
 				if (!Helper.isAbstractClass(target))

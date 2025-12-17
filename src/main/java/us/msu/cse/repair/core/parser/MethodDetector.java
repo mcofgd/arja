@@ -16,6 +16,7 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.Modifier;
 
 import us.msu.cse.repair.core.util.Helper;
+import us.msu.cse.repair.core.util.SafeClassLoader;
 
 public class MethodDetector {
 	List<ModificationPoint> modificationPoints;
@@ -97,19 +98,30 @@ public class MethodDetector {
 
 			isStaticClass = Modifier.isStatic(tb.getModifiers());
 		} else {
-			Class<?> target = classLoader.loadClass(className);
-			Method[] mds = target.getDeclaredMethods();
-			methods = Helper.getMethodInfos(mds);
+			try {
+				// Try to load the class using SafeClassLoader
+				Class<?> target = SafeClassLoader.loadClass(className, classLoader);
+				Method[] mds = target.getDeclaredMethods();
+				methods = Helper.getMethodInfos(mds);
 
-			Class<?> superClass = target.getSuperclass();
-			if (superClass != null && !superClass.isInterface())
-				superClassName = superClass.getName();
+				Class<?> superClass = target.getSuperclass();
+				if (superClass != null && !superClass.isInterface())
+					superClassName = superClass.getName();
 
-			Class<?> outerClass = target.getDeclaringClass();
-			if (outerClass != null && !outerClass.isInterface())
-				outerClassName = outerClass.getName();
+				Class<?> outerClass = target.getDeclaringClass();
+				if (outerClass != null && !outerClass.isInterface())
+					outerClassName = outerClass.getName();
 
-			isStaticClass = Modifier.isStatic(target.getModifiers());
+				isStaticClass = Modifier.isStatic(target.getModifiers());
+			} catch (ClassNotFoundException e) {
+				// If class cannot be loaded, skip it gracefully
+				System.err.println("Warning: Cannot load class '" + className + "' in MethodDetector: " + e.getMessage());
+				System.err.println("  This class will be skipped in method detection.");
+				// Return empty methods for this class
+				declaredMethodMap.put(className, new HashMap<String, MethodInfo>());
+				inheritedMethodMap.put(className, new HashMap<String, MethodInfo>());
+				return;
+			}
 		}
 		declaredMethodMap.put(className, methods);
 

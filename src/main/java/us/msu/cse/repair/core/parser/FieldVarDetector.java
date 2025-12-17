@@ -15,6 +15,7 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.Modifier;
 
 import us.msu.cse.repair.core.util.Helper;
+import us.msu.cse.repair.core.util.SafeClassLoader;
 
 public class FieldVarDetector {
 	List<ModificationPoint> modificationPoints;
@@ -93,19 +94,30 @@ public class FieldVarDetector {
 
 			isStaticClass = Modifier.isStatic(tb.getModifiers());
 		} else {
-			Class<?> target = classLoader.loadClass(className);
-			Field[] fs = target.getDeclaredFields();
-			fields = Helper.getVarInfos(fs);
+			try {
+				// Try to load the class using SafeClassLoader
+				Class<?> target = SafeClassLoader.loadClass(className, classLoader);
+				Field[] fs = target.getDeclaredFields();
+				fields = Helper.getVarInfos(fs);
 
-			Class<?> superClass = target.getSuperclass();
-			if (superClass != null && !superClass.isInterface())
-				superClassName = superClass.getName();
+				Class<?> superClass = target.getSuperclass();
+				if (superClass != null && !superClass.isInterface())
+					superClassName = superClass.getName();
 
-			Class<?> outerClass = target.getDeclaringClass();
-			if (outerClass != null && !outerClass.isInterface())
-				outerClassName = outerClass.getName();
+				Class<?> outerClass = target.getDeclaringClass();
+				if (outerClass != null && !outerClass.isInterface())
+					outerClassName = outerClass.getName();
 
-			isStaticClass = Modifier.isStatic(target.getModifiers());
+				isStaticClass = Modifier.isStatic(target.getModifiers());
+			} catch (ClassNotFoundException e) {
+				// If class cannot be loaded, skip it gracefully
+				System.err.println("Warning: Cannot load class '" + className + "': " + e.getMessage());
+				System.err.println("  This class will be skipped in field detection.");
+				// Return empty fields for this class
+				declaredFieldMap.put(className, new HashMap<String, VarInfo>());
+				inheritedFieldMap.put(className, new HashMap<String, VarInfo>());
+				return;
+			}
 		}
 		declaredFieldMap.put(className, fields);
 
@@ -174,4 +186,5 @@ public class FieldVarDetector {
 				inheritedFields.put(entry.getKey(), entry.getValue());
 		}
 	}
+	
 }
