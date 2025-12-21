@@ -43,11 +43,17 @@ public class FileASTRequestorImpl extends FileASTRequestor {
 
 	@Override
 	public void acceptAST(String sourceFilePath, CompilationUnit cu) {
+		System.out.println("FileASTRequestor accepted: " + sourceFilePath);
 		sourceASTs.put(sourceFilePath, cu);
 
 		InitASTVisitor visitor = new InitASTVisitor(sourceFilePath, faultyLines, seedLines, modificationPoints,
 				seedStatements, declaredClasses);
-		cu.accept(visitor);
+		try {
+			cu.accept(visitor);
+		} catch (Exception e) {
+			System.err.println("Error visiting AST for file: " + sourceFilePath);
+			e.printStackTrace();
+		}
 
 		try {
 			String content = new String(FileUtils.readFileToByteArray(new File(sourceFilePath)));

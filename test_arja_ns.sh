@@ -15,15 +15,15 @@ PROJECT_NAME="Math_1b"       # 推荐使用简单的 bug 进行验证（Lang_1b,
 ARJA_HOME="$HOME/arja"
 
 # 搜索参数（可适当加大）
-POPULATION_SIZE=20        # 减少初始种群大小，便于调试
-MAX_GENERATIONS=10        # 减少代数，便于快速验证
-WAIT_TIME=180000         # 180秒，增加超时时间避免测试卡住
+POPULATION_SIZE=40        # 减少初始种群大小，便于调试
+MAX_GENERATIONS=50        # 减少代数，便于快速验证
+WAIT_TIME=1800000         # 1800秒，增加超时时间避免测试卡住
 TEST_EXECUTOR="ExternalTestExecutor"  # 使用外部测试执行器，更稳定
 
 # 日志与输出
-LOG_DIR="$WORK_DIR/logs"
+LOG_DIR="$ARJA_HOME"
 PATCH_OUTPUT_ROOT="$WORK_DIR/arja_patches_${PROJECT_NAME}"
-ARJA_LOG="$LOG_DIR/arja_${PROJECT_NAME}_$(date +%Y%m%d_%H%M%S).log"
+ARJA_LOG="$LOG_DIR/arja_${PROJECT_NAME}_debug.log"
 
 # 颜色
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -240,24 +240,29 @@ run_arja_with_full_logging() {
     # 2. 添加 externalProjRoot 参数（Defects4JFaultLocalizer 需要）
     # 3. 禁用所有过滤规则避免修改点被过滤
     # 4. 使用 ExternalTestExecutor 更稳定
+    # ✅ 关键修复：添加 -Dpercentage 0.1 参数，只运行 10% 的测试
+    # 这样可以大幅减少测试时间，避免超时
     CMD="java --add-opens java.base/java.lang=ALL-UNNAMED \
          --add-opens java.base/java.util=ALL-UNNAMED \
          -cp \"$CLASSPATH\" us.msu.cse.repair.Main Arja \
-    -DsrcJavaDir \"$WORK_DIR/$PROJECT_NAME\" \
-    -DbinJavaDir \"$WORK_DIR/$PROJECT_NAME/$BIN_DIR\" \
-    -DbinTestDir \"$WORK_DIR/$PROJECT_NAME/$TEST_DIR\" \
-    -Ddependences \"$CP_TEST\" \
-    -DexternalProjRoot \"$WORK_DIR/$PROJECT_NAME\" \
+    -DsrcJavaDir "$WORK_DIR/$PROJECT_NAME/src/main/java" \
+    -DbinJavaDir "$WORK_DIR/$PROJECT_NAME/$BIN_DIR" \
+    -DbinTestDir "$WORK_DIR/$PROJECT_NAME/$TEST_DIR" \
+    -Ddependences "$CP_TEST" \
+    -DexternalProjRoot "$ARJA_HOME/external" \
     -DpopulationSize $POPULATION_SIZE \
     -DmaxGenerations $MAX_GENERATIONS \
     -DwaitTime $WAIT_TIME \
-    -DpatchOutputRoot \"$PATCH_OUTPUT_ROOT\" \
+    -DpatchOutputRoot "$PATCH_OUTPUT_ROOT" \
+    -Dpercentage 0.9 \
+    -Dthr 0.1 \
     -DtestFiltered false \
-    -DtestExecutorName \"$TEST_EXECUTOR\" \
+    -DtestExecutorName "$TEST_EXECUTOR" \
     -DnoveltySearchMode none \
     -DmiFilterRule false \
     -DmanipulationFilterRule false \
     -DingredientFilterRule false \
+    -DdiffFormat true \
     -DseedLineGenerated false"
 
     log_info "▶ 执行命令（日志: $ARJA_LOG）"
@@ -273,10 +278,11 @@ run_arja_with_full_logging() {
     while kill -0 $ARJA_PID 2>/dev/null; do
         # 检查补丁
         if [ -d "$PATCH_OUTPUT_ROOT" ]; then
-            PATCH_COUNT=$(find "$PATCH_OUTPUT_ROOT" -name "*.patch" -type f 2>/dev/null | wc -l)
+            # 查找 Patch_*.txt 或 diff 文件
+            PATCH_COUNT=$(find "$PATCH_OUTPUT_ROOT" \( -name "Patch_*.txt" -o -name "diff" \) -type f 2>/dev/null | wc -l)
             if [ "$PATCH_COUNT" -gt 0 ]; then
                 log_success "🎉 检测到 $PATCH_COUNT 个补丁！"
-                FIRST_PATCH=$(find "$PATCH_OUTPUT_ROOT" -name "*.patch" -type f | head -1)
+                FIRST_PATCH=$(find "$PATCH_OUTPUT_ROOT" \( -name "Patch_*.txt" -o -name "diff" \) -type f | head -1)
                 echo "=== 第一个补丁 ==="
                 cat "$FIRST_PATCH"
                 echo "=================="
@@ -307,12 +313,13 @@ analyze_results() {
 
     # 1. 补丁是否存在
     if [ -d "$PATCH_OUTPUT_ROOT" ]; then
-        PATCHES=$(find "$PATCH_OUTPUT_ROOT" -name "*.patch" -type f 2>/dev/null)
+        # 查找 .txt 补丁描述文件或 diff 文件
+        PATCHES=$(find "$PATCH_OUTPUT_ROOT" -name "Patch_*.txt" -o -name "diff" -type f 2>/dev/null)
         if [ -n "$PATCHES" ]; then
             log_success "成功生成补丁！"
             echo "$PATCHES"
         else
-            log_warning "补丁目录存在但无 .patch 文件（可能无有效修复）"
+            log_warning "补丁目录存在但无补丁文件（可能无有效修复）"
         fi
     else
         log_warning "未找到补丁目录（ARJA 可能未进入修复阶段）"

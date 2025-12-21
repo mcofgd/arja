@@ -4,8 +4,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -208,9 +211,12 @@ public class Defects4JFaultLocalizer implements IFaultLocalizer {
             String line;
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                if (!line.isEmpty() && !line.startsWith("---")) {
+                // ✅ 修复：Defects4J 的 failing_tests 文件格式为 "--- Class::Method"
+                // 后续行是堆栈信息，应该忽略
+                if (line.startsWith("--- ")) {
+                    String testName = line.substring(4).trim();
                     // Convert :: to # for consistency
-                    negativeTestMethods.add(line.replace("::", "#"));
+                    negativeTestMethods.add(testName.replace("::", "#"));
                 }
             }
         }
@@ -301,40 +307,54 @@ public class Defects4JFaultLocalizer implements IFaultLocalizer {
             System.out.println("WARNING: No failing tests found!");
             return;
         }
+
+        // ✅ 关键修复：获取每个失败测试的覆盖率
+        // 这样我们才能准确知道某行是否被失败测试执行了 (ef)
+        Map<String, Set<String>> failingTestCoverage = new HashMap<>();
+        try {
+            failingTestCoverage = getPerTestCoverage(negativeTestMethods);
+        } catch (Exception e) {
+            System.err.println("Error getting per-test coverage: " + e.getMessage());
+            e.printStackTrace();
+        }
         
         for (Map.Entry<String, CoberturaParser.LineCoverage> entry : projectCoverage.entrySet()) {
             CoberturaParser.LineCoverage coverage = entry.getValue();
-            
-            // For simplicity, assume if a line has hits > 0, it was executed by tests
-            // In reality, we would need per-test coverage data
-            // Here we use a heuristic: lines with low hits are more suspicious
+            String lineKey = coverage.className + "#" + coverage.lineNumber;
             
             if (coverage.hits > 0) {
-                // Heuristic: assume lines executed by fewer tests are more suspicious
-                // This is a simplification since we don't have per-test coverage
-                
-                // Estimate ef and ep based on hits
-                // Lines with very few hits are likely only executed by failing tests
-                double suspiciousness;
-                
-                if (coverage.hits <= totalFailingTests) {
-                    // Likely executed mainly by failing tests
-                    int ef = Math.min(coverage.hits, totalFailingTests);
-                    int ep = Math.max(0, coverage.hits - ef);
-                    int nf = totalFailingTests - ef;
-                    
-                    if (ef > 0) {
-                        suspiciousness = ef / Math.sqrt((ef + ep) * (ef + nf));
-                    } else {
-                        suspiciousness = 0.0;
+                // 1. 计算 ef (executing failing tests)
+                // 遍历所有失败测试，看它们是否覆盖了当前行
+                int ef = 0;
+                for (String test : negativeTestMethods) {
+                    Set<String> coveredLines = failingTestCoverage.get(test);
+                    if (coveredLines != null && coveredLines.contains(lineKey)) {
+                        ef++;
                     }
-                } else {
-                    // Executed by many tests, less suspicious
-                    int ef = totalFailingTests;
-                    int ep = coverage.hits - ef;
-                    int nf = 0;
-                    
-                    suspiciousness = ef / Math.sqrt((ef + ep) * (ef + nf + 1));
+                }
+                
+                // 如果没有 per-test coverage 数据（例如获取失败），回退到启发式
+                if (failingTestCoverage.isEmpty()) {
+                     // Fallback heuristic
+                     ef = Math.min(coverage.hits, totalFailingTests);
+                }
+
+                // 2. 计算 ep (executing passing tests)
+                // ep = total_hits - ef (近似值，假设每次 hit 对应一个测试)
+                // 注意：这仍然是一个近似值，因为一个测试可能多次命中同一行
+                // 但比之前的纯猜测要好得多
+                int ep = Math.max(0, coverage.hits - ef);
+                
+                // 修正 ep：不能超过总通过测试数
+                ep = Math.min(ep, totalPassingTests);
+
+                // 3. 计算 nf (not executing failing tests)
+                int nf = totalFailingTests - ef;
+                
+                // 4. 计算 Ochiai
+                double suspiciousness = 0.0;
+                if (ef > 0) {
+                    suspiciousness = ef / Math.sqrt((ef + ep) * (ef + nf));
                 }
                 
                 if (suspiciousness > 0) {
@@ -343,6 +363,48 @@ public class Defects4JFaultLocalizer implements IFaultLocalizer {
                 }
             }
         }
+    }
+
+    /**
+     * 获取每个失败测试的覆盖率
+     * 返回 Map: TestName -> Set<LineKey> (ClassName#LineNumber)
+     */
+    private Map<String, Set<String>> getPerTestCoverage(Set<String> tests) throws Exception {
+        Map<String, Set<String>> coverageMap = new HashMap<>();
+        System.out.println("Collecting per-test coverage for " + tests.size() + " failing tests...");
+        
+        int count = 0;
+        for (String test : tests) {
+            count++;
+            System.out.println("  [" + count + "/" + tests.size() + "] Running coverage for: " + test);
+            
+            // 运行单个测试的覆盖率
+            // defects4j coverage -t <test_class>::<test_method>
+            ProcessBuilder pb = new ProcessBuilder(
+                "defects4j", "coverage", "-t", test.replace("#", "::")
+            );
+            pb.directory(new File(projectDir));
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            p.waitFor();
+            
+            // 解析 coverage.xml
+            File coverageXml = new File(projectDir, "coverage.xml");
+            if (coverageXml.exists()) {
+                CoberturaParser parser = new CoberturaParser();
+                Map<String, CoberturaParser.LineCoverage> lines = parser.parse(coverageXml);
+                
+                Set<String> coveredLines = new HashSet<>();
+                for (CoberturaParser.LineCoverage line : lines.values()) {
+                    if (line.hits > 0) {
+                        coveredLines.add(line.className + "#" + line.lineNumber);
+                    }
+                }
+                coverageMap.put(test, coveredLines);
+            }
+        }
+        
+        return coverageMap;
     }
     
     @Override

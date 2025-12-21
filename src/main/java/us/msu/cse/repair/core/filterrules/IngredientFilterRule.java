@@ -13,7 +13,7 @@ import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 import us.msu.cse.repair.core.parser.ModificationPoint;
 import us.msu.cse.repair.core.util.Helper;
 
-public class IngredientFilterRule {
+public class IngredientFilterRule { // 配料过滤规则
 	public static boolean canFiltered(Statement seed, ModificationPoint mp) {
 		if (rule_1(seed, mp))
 			return true;
@@ -42,7 +42,7 @@ public class IngredientFilterRule {
 		return true;
 	}
 
-	static boolean rule_2(Statement seed, ModificationPoint mp) {
+	static boolean rule_2(Statement seed, ModificationPoint mp) { // break 语句过滤规则
 		boolean flag1 = seed instanceof BreakStatement;
 		if (!flag1)
 			return false;

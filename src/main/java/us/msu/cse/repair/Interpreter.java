@@ -106,6 +106,42 @@ public class Interpreter {
 			boolean testFiltered = Boolean.parseBoolean(testFilteredS);
 			parameters.put("testFiltered", testFiltered);
 		}
+		
+		// ✅ 关键修复：添加 percentage 参数处理
+		String percentageS = parameterStrs.get("percentage");
+		if (percentageS != null) {
+			double percentage = Double.parseDouble(percentageS);
+			parameters.put("percentage", percentage);
+		}
+		
+		// ✅ 添加 seedLineGenerated 参数处理
+		String seedLineGeneratedS = parameterStrs.get("seedLineGenerated");
+		if (seedLineGeneratedS != null) {
+			boolean seedLineGenerated = Boolean.parseBoolean(seedLineGeneratedS);
+			parameters.put("seedLineGenerated", seedLineGenerated);
+		}
+		
+		// ✅ 添加 manipulationFilterRule 参数处理
+		String manipulationFilterRuleS = parameterStrs.get("manipulationFilterRule");
+		if (manipulationFilterRuleS != null) {
+			boolean manipulationFilterRule = Boolean.parseBoolean(manipulationFilterRuleS);
+			parameters.put("manipulationFilterRule", manipulationFilterRule);
+		}
+		
+		// ✅ 添加 ingredientFilterRule 参数处理
+		String ingredientFilterRuleS = parameterStrs.get("ingredientFilterRule");
+		if (ingredientFilterRuleS != null) {
+			boolean ingredientFilterRule = Boolean.parseBoolean(ingredientFilterRuleS);
+			parameters.put("ingredientFilterRule", ingredientFilterRule);
+		}
+		
+		// ✅ 关键修复：添加 miFilterRule 参数处理（ArjaProblem 使用）
+		String miFilterRuleS = parameterStrs.get("miFilterRule");
+		if (miFilterRuleS != null) {
+			boolean miFilterRule = Boolean.parseBoolean(miFilterRuleS);
+			parameters.put("miFilterRule", miFilterRule);
+			System.out.println("DEBUG: miFilterRule parameter parsed: " + miFilterRule);
+		}
 
 		String seed_str = parameterStrs.get("seed");
 		double seed = 0.0;

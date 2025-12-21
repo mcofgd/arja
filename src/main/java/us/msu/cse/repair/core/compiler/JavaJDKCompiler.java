@@ -65,8 +65,8 @@ public class JavaJDKCompiler {
 	public List<String> getErrors() {
 		List<String> errors = new ArrayList<String>();
 		for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
-			if (d.getKind() == Kind.ERROR || d.getKind() == Kind.MANDATORY_WARNING)
-				errors.add(d.toString());
+			// Capture all diagnostics to debug why compilation fails without errors
+			errors.add(d.toString());
 		}
 		return errors;
 	}

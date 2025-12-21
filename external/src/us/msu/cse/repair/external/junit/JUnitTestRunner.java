@@ -31,7 +31,13 @@ public class JUnitTestRunner {
 		List<String> failedTests = new ArrayList<String>();
 
 		for (String test : tests) {
+			if (test == null || test.trim().isEmpty()) continue;
+			
 			String strs[] = test.split("#");
+			if (strs.length < 2) {
+				System.err.println("Invalid test format: " + test);
+				continue;
+			}
 			String className = strs[0];
 			String methodName = strs[1];
 			

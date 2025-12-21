@@ -68,6 +68,15 @@ public class ExternalTestExecutor implements ITestExecutor {
 
 	@Override
 	public boolean runTests() throws IOException, InterruptedException {
+		// ✅ 关键修复：检查是否有测试可运行
+		if (positiveTests.isEmpty() && negativeTests.isEmpty()) {
+			System.err.println("⚠️  ExternalTestExecutor: No tests to run!");
+			System.err.println("   This usually means test filtering failed.");
+			System.err.println("   Marking as exceptional to avoid timeout.");
+			isExceptional = true;
+			return false;  // 立即返回，不启动进程
+		}
+		
 		// TODO Auto-generated method stub
 		List<String> params = new ArrayList<String>();
 		params.add(jvmPath);
@@ -98,9 +107,12 @@ public class ExternalTestExecutor implements ITestExecutor {
 		}
 
 		ProcessBuilder builder = new ProcessBuilder(params);
-		builder.redirectOutput();
-		builder.redirectErrorStream(true);
-		builder.directory();
+		// ✅ 修复：移除错误的方法调用
+		// builder.redirectOutput();  // ❌ 删除：无参数调用会导致编译错误
+		builder.redirectErrorStream(true);  // ✅ 保留：将错误流合并到标准输出
+		// builder.directory();  // ❌ 删除：无参数调用会导致编译错误
+		
+		// ✅ 设置时区环境变量
 		builder.environment().put("TZ", "America/Los_Angeles");
 
 		Process process = builder.start();
@@ -115,6 +127,12 @@ public class ExternalTestExecutor implements ITestExecutor {
 
 		if (exitCode != 0 || streamReaderThread.isStreamExceptional()) {
 			isExceptional = true;
+			System.err.println("ExternalTestExecutor failed with exit code: " + exitCode);
+			System.err.println("Stream exceptional: " + streamReaderThread.isStreamExceptional());
+			System.err.println("Process Output:");
+			for (String line : streamReaderThread.getOutput()) {
+				System.err.println("  " + line);
+			}
 			return false;
 		}
 

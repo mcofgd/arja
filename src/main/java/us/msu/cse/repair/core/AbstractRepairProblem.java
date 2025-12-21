@@ -302,9 +302,8 @@ public abstract class AbstractRepairProblem extends Problem {
 		// ✅ 使用 Defects4JFaultLocalizer 替代 GZoltar（Java 11 兼容）
 		if (gzoltarDataDir == null) {
 			System.out.println("Using Defects4JFaultLocalizer (Java 11 compatible)");
-			System.out.println("  externalProjRoot: " + externalProjRoot);
 			faultLocalizer = new Defects4JFaultLocalizer(binJavaClasses, binExecuteTestClasses, binJavaDir, binTestDir,
-					dependences, externalProjRoot);
+					dependences);
 		} else {
 			System.out.println("Using GZoltarFaultLocalizer2 with pre-computed data");
 			faultLocalizer = new GZoltarFaultLocalizer2(gzoltarDataDir);

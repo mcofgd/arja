@@ -7,7 +7,7 @@ import us.msu.cse.repair.core.parser.ModificationPoint;
 import jmetal.util.Configuration;
 import jmetal.util.JMException;
 
-public class ManipulationFactory {
+public class ManipulationFactory { // 工厂类，根据名称创建不同的操作实例
 	public static AbstractManipulation getManipulation(String name, ModificationPoint mp, Statement ingredStatement,
 			ASTRewrite rewriter) throws JMException {
 		if (name.equalsIgnoreCase("Delete"))

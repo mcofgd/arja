@@ -252,6 +252,15 @@ public class Helper {
 		}
 	}
 
+	public static boolean isInConstructor(Statement statement) {
+		MethodDeclaration md = getMethodDeclaration(statement);
+		if (md == null)
+			return false;
+		else {
+			return md.isConstructor();
+		}
+	}
+
 	public static boolean isStaticMethod(MethodInfo mi) {
 		int mod = mi.getModifiers();
 		return Modifier.isStatic(mod);
@@ -311,8 +320,8 @@ public class Helper {
 		int index1 = className1.lastIndexOf(".");
 		int index2 = className2.lastIndexOf(".");
 
-		String pk1 = className1.substring(0, index1);
-		String pk2 = className2.substring(0, index2);
+		String pk1 = (index1 == -1) ? "" : className1.substring(0, index1);
+		String pk2 = (index2 == -1) ? "" : className2.substring(0, index2);
 
 		return pk1.equals(pk2);
 	}

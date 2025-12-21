@@ -514,12 +514,23 @@ public class IngredientUtil {
 						return false;
 				} else {
 					ITypeBinding tb = rs.getExpression().resolveTypeBinding();
+					// ✅ Java 11 兼容性修复：resolveTypeBinding() 可能返回 null
+					if (tb == null) {
+						// 无法解析类型，跳过此语句
+						continue;
+					}
 					if (!tb.isAssignmentCompatible(methodReturnTypeBinding))
 						return false;
 				}
 			} else {
 				ThrowStatement ts = (ThrowStatement) statement;
 				ITypeBinding tb = ts.getExpression().resolveTypeBinding();
+				
+				// ✅ Java 11 兼容性修复：resolveTypeBinding() 可能返回 null
+				if (tb == null) {
+					// 无法解析类型，跳过此语句
+					continue;
+				}
 
 				if (Helper.isRuntimeException(tb))
 					continue;

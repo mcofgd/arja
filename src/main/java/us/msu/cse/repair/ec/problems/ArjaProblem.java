@@ -72,8 +72,13 @@ public class ArjaProblem extends AbstractRepairProblem {
 			initializationStrategy = "Prior";
 
 		miFilterRule = (Boolean) parameters.get("miFilterRule");
-		if (miFilterRule == null)
+		System.out.println("DEBUG: ArjaProblem constructor - miFilterRule from parameters: " + miFilterRule);
+		if (miFilterRule == null) {
 			miFilterRule = true;
+			System.out.println("DEBUG: miFilterRule was null, defaulting to true");
+		} else {
+			System.out.println("DEBUG: miFilterRule set to: " + miFilterRule);
+		}
 
 		maxNumberOfEdits = (Integer) parameters.get("maxNumberOfEdits");
 		
@@ -309,6 +314,16 @@ public class ArjaProblem extends AbstractRepairProblem {
 	boolean invokeTestExecutor(Map<String, JavaFileObject> compiledClasses, Solution solution) throws Exception {
 		Set<String> samplePosTests = getSamplePositiveTests();
 		System.out.println("Getting test executor, sample tests: " + samplePosTests.size());
+		
+		// ✅ 关键修复：检查是否有测试可用
+		if (samplePosTests.isEmpty()) {
+			System.err.println("⚠️  ArjaProblem: No sample tests available!");
+			System.err.println("   This means test filtering failed and returned 0 tests.");
+			System.err.println("   Cannot evaluate fitness without tests.");
+			assignMaxObjectiveValues(solution);
+			return false;
+		}
+		
 		ITestExecutor testExecutor = getTestExecutor(compiledClasses, samplePosTests);
 		System.out.println("Test executor created, running tests (waitTime: " + waitTime + "ms)...");
 

@@ -61,6 +61,11 @@ public class InitASTVisitor extends ASTVisitor {
 		this.seedStatements = seedStatements;
 
 		this.declaredClasses = declaredClasses;
+		
+		System.out.println("InitASTVisitor initialized with " + faultyLines.size() + " faulty lines.");
+		for (LCNode node : faultyLines.keySet()) {
+			System.out.println("Faulty Line: " + node);
+		}
 	}
 
 	private void insertStatement(Statement statement) {
@@ -73,19 +78,29 @@ public class InitASTVisitor extends ASTVisitor {
 
 		LCNode lcNode = new LCNode(className, lineNumber);
 
+		// Debug print
+		System.out.println("Visiting: " + lcNode);
+
 		if (faultyLines.containsKey(lcNode)) {
-			ModificationPoint mp = new ModificationPoint();
+			System.out.println("Found faulty line: " + lcNode);
+			// ✅ 过滤构造函数中的修改点，避免初始化错误
+			// if (Helper.isInConstructor(statement)) {
+			// 	System.out.println("Skipping modification point in constructor: " + lcNode);
+			// } else {
+				ModificationPoint mp = new ModificationPoint();
 
-			double suspValue = faultyLines.get(lcNode);
-			boolean isInStaticMethod = Helper.isInStaticMethod(statement);
+				double suspValue = faultyLines.get(lcNode);
+				boolean isInStaticMethod = Helper.isInStaticMethod(statement);
 
-			mp.setSourceFilePath(sourceFilePath);
-			mp.setLCNode(lcNode);
-			mp.setSuspValue(suspValue);
-			mp.setStatement(statement);
-			mp.setInStaticMethod(isInStaticMethod);
+				mp.setSourceFilePath(sourceFilePath);
+				mp.setLCNode(lcNode);
+				mp.setSuspValue(suspValue);
+				mp.setStatement(statement);
+				mp.setInStaticMethod(isInStaticMethod);
+			// }
 
-			modificationPoints.add(mp);
+				modificationPoints.add(mp);
+			// }
 		}
 
 		if (seedLines == null || seedLines.contains(lcNode)) {

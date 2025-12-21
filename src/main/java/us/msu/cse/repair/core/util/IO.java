@@ -284,9 +284,9 @@ public class IO {
 		params.add(revisedFilePath);
 		
 		ProcessBuilder builder = new ProcessBuilder(params);
-		builder.redirectOutput();
+		// builder.redirectOutput(); // ❌ 删除：无参数调用会导致编译错误
 		builder.redirectErrorStream(true);
-		builder.directory();
+		// builder.directory(); // ❌ 删除：无参数调用会导致编译错误
 
 		Process process = builder.start();
 		
