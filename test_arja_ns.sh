@@ -11,12 +11,12 @@ set -e
 DEFECTS4J_HOME="$HOME/defects4j"
 JAVA11_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
 WORK_DIR="$HOME/defects4j_test"
-PROJECT_NAME="Math_1b"       # 推荐使用简单的 bug 进行验证（Lang_1b, Math_1b 等）
+PROJECT_NAME="Math_2"       # 推荐使用简单的 bug 进行验证（Lang_1b, Math_1b 等）
 ARJA_HOME="$HOME/arja"
 
 # 搜索参数（可适当加大）
-POPULATION_SIZE=40        # 减少初始种群大小，便于调试
-MAX_GENERATIONS=50        # 减少代数，便于快速验证
+POPULATION_SIZE=50        # 减少初始种群大小，便于调试
+MAX_GENERATIONS=80        # 减少代数，便于快速验证
 WAIT_TIME=1800000         # 1800秒，增加超时时间避免测试卡住
 TEST_EXECUTOR="ExternalTestExecutor"  # 使用外部测试执行器，更稳定
 
@@ -235,12 +235,12 @@ run_arja_with_full_logging() {
     log_info "Classpath: ${CLASSPATH:0:100}..."
     
     # 构建命令（Java 11 兼容 + Defects4JFaultLocalizer）
-    # ✅ 关键修复：
+    # 关键修复：
     # 1. 使用完整 classpath（包含所有依赖）
     # 2. 添加 externalProjRoot 参数（Defects4JFaultLocalizer 需要）
     # 3. 禁用所有过滤规则避免修改点被过滤
     # 4. 使用 ExternalTestExecutor 更稳定
-    # ✅ 关键修复：添加 -Dpercentage 0.1 参数，只运行 10% 的测试
+    # 关键修复：添加 -Dpercentage 0.1 参数，只运行 10% 的测试
     # 这样可以大幅减少测试时间，避免超时
     CMD="java --add-opens java.base/java.lang=ALL-UNNAMED \
          --add-opens java.base/java.util=ALL-UNNAMED \
@@ -254,7 +254,7 @@ run_arja_with_full_logging() {
     -DmaxGenerations $MAX_GENERATIONS \
     -DwaitTime $WAIT_TIME \
     -DpatchOutputRoot "$PATCH_OUTPUT_ROOT" \
-    -Dpercentage 0.9 \
+    -Dpercentage 1 \
     -Dthr 0.1 \
     -DtestFiltered false \
     -DtestExecutorName "$TEST_EXECUTOR" \
@@ -281,7 +281,7 @@ run_arja_with_full_logging() {
             # 查找 Patch_*.txt 或 diff 文件
             PATCH_COUNT=$(find "$PATCH_OUTPUT_ROOT" \( -name "Patch_*.txt" -o -name "diff" \) -type f 2>/dev/null | wc -l)
             if [ "$PATCH_COUNT" -gt 0 ]; then
-                log_success "🎉 检测到 $PATCH_COUNT 个补丁！"
+                log_success "检测到 $PATCH_COUNT 个补丁！"
                 FIRST_PATCH=$(find "$PATCH_OUTPUT_ROOT" \( -name "Patch_*.txt" -o -name "diff" \) -type f | head -1)
                 echo "=== 第一个补丁 ==="
                 cat "$FIRST_PATCH"
@@ -343,7 +343,7 @@ analyze_results() {
     elif grep -q "Generation.*completed" "$ARJA_LOG" && ! grep -q "All tests passed" "$ARJA_LOG"; then
         log_info "搜索完成但未找到有效补丁（可能需增大种群或换更简单 bug）"
     elif grep -q "One fitness evaluation starts" "$ARJA_LOG" && ! grep -q "One fitness evaluation is finished" "$ARJA_LOG"; then
-        log_error "⚠️ 关键问题：评估开始但未完成！"
+        log_error "关键问题：评估开始但未完成！"
         log_error "可能原因："
         log_error "  1. 测试执行超时（当前 waitTime: ${WAIT_TIME}ms）"
         log_error "  2. 测试执行器卡住"

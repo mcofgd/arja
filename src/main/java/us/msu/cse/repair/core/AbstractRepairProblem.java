@@ -302,6 +302,8 @@ public abstract class AbstractRepairProblem extends Problem {
 		// ✅ 使用 Defects4JFaultLocalizer 替代 GZoltar（Java 11 兼容）
 		if (gzoltarDataDir == null) {
 			System.out.println("Using Defects4JFaultLocalizer (Java 11 compatible)");
+			// ✅ 修复：不传递 externalProjRoot，让 Defects4JFaultLocalizer 自动推导项目根目录
+			// 因为 externalProjRoot 指向的是 ARJA 的 external 目录，而不是被修复项目的根目录
 			faultLocalizer = new Defects4JFaultLocalizer(binJavaClasses, binExecuteTestClasses, binJavaDir, binTestDir,
 					dependences);
 		} else {
@@ -311,8 +313,16 @@ public abstract class AbstractRepairProblem extends Problem {
 
 		faultyLines = faultLocalizer.searchSuspicious(thr);
 
-		positiveTests = faultLocalizer.getPositiveTests();
-		negativeTests = faultLocalizer.getNegativeTests();
+		// ✅ 关键修复：防御性复制，避免测试集被后续操作修改
+		Set<String> originalPositiveTests = faultLocalizer.getPositiveTests();
+		Set<String> originalNegativeTests = faultLocalizer.getNegativeTests();
+		
+		positiveTests = new HashSet<String>(originalPositiveTests);
+		negativeTests = new HashSet<String>(originalNegativeTests);
+		
+		System.out.println("DEBUG: Fault localizer returned " + originalPositiveTests.size() + " positive tests");
+		System.out.println("DEBUG: After defensive copy, positiveTests = " + positiveTests.size());
+		System.out.println("DEBUG: positiveTests object ID: " + System.identityHashCode(positiveTests));
 
 		if (orgPosTestsInfoPath != null)
 			FileUtils.writeLines(new File(orgPosTestsInfoPath), positiveTests);
@@ -337,16 +347,34 @@ public abstract class AbstractRepairProblem extends Problem {
 			}
 		}
 		System.out.println("Fault localization is finished!");
+		System.out.println("DEBUG: At end of invokeFaultLocalizer, positiveTests = " + positiveTests.size());
 	}
 
 	void invokeSeedLineGenerator() throws IOException, InterruptedException {
+		System.out.println("DEBUG: At start of invokeSeedLineGenerator, positiveTests = " + positiveTests.size());
+		
 		if (seedLineGenerated) {
-			SeedLineGeneratorProcess slgp = new SeedLineGeneratorProcess(binJavaClasses, javaClassesInfoPath,
-					binExecuteTestClasses, testClassesInfoPath, binJavaDir, binTestDir, dependences, externalProjRoot,
-					jvmPath);
-			seedLines = slgp.getSeedLines();
-		} else
+			// ✅ Java 11 兼容性修复：使用故障定位结果作为种子行
+			// 原代码调用外部进程在 Java 11 下因模块系统限制而失败
+			// SeedLineGeneratorProcess slgp = new SeedLineGeneratorProcess(binJavaClasses, javaClassesInfoPath,
+			// 		binExecuteTestClasses, testClassesInfoPath, binJavaDir, binTestDir, dependences, externalProjRoot,
+			// 		jvmPath);
+			// seedLines = slgp.getSeedLines();
+			
+			// 使用故障定位结果作为种子行（更精确且 Java 11 兼容）
+			seedLines = new HashSet<LCNode>(faultyLines.keySet());
+			System.out.println("✅ Seed lines generated from fault localization: " + seedLines.size() + " lines");
+			System.out.println("   This ensures ingredients are only selected from fault-related code.");
+		} else {
+			// ⚠️ 警告：设置为 null 会导致所有语句都被当作 seed（InitASTVisitor.java:91）
+			// 这会导致 ingredient 池爆炸（5000+ 语句），过滤规则失效，修复能力下降
 			seedLines = null;
+			System.out.println("⚠️  WARNING: seedLineGenerated=false, all statements will be treated as seeds!");
+			System.out.println("   This provides maximum repair capability at the cost of performance.");
+			System.out.println("   Recommendation: Set -DseedLineGenerated true");
+		}
+		
+		System.out.println("DEBUG: At end of invokeSeedLineGenerator, positiveTests = " + positiveTests.size());
 	}
 
 	@SuppressWarnings({ "unchecked", "rawtypes" })
@@ -385,8 +413,13 @@ public abstract class AbstractRepairProblem extends Problem {
 		String[] sourceFilePaths = new String[javaFiles.size()];
 
 		int i = 0;
-		for (File file : javaFiles)
+		for (File file : javaFiles) {
 			sourceFilePaths[i++] = file.getCanonicalPath();
+			if (file.getName().equals("Fraction.java")) {
+				System.out.println("DEBUG: Found Fraction.java at " + file.getCanonicalPath());
+			}
+		}
+		System.out.println("DEBUG: Total source files found: " + sourceFilePaths.length);
 
 		parser.createASTs(sourceFilePaths, null, new String[] { "UTF-8" }, requestor, null);
 
@@ -471,14 +504,30 @@ public abstract class AbstractRepairProblem extends Problem {
 				} else
 					list.add(manipulationName);
 			}
+			
+			// ✅ 强制添加 Delete 操作（如果未被添加）
+			// 确保每个修改点至少有一个操作可用，避免被 Trimmer 误删
+			if (!list.contains("Delete")) {
+				list.add("Delete");
+			}
+			
 			availableManipulations.add(list);
 		}
 		System.out.println("Initialization of manipulations is finished!");
 	}
 
 	void invokeTestFilter() throws IOException, InterruptedException {
+		System.out.println("DEBUG: At start of invokeTestFilter, positiveTests = " + positiveTests.size());
+		System.out.println("DEBUG: positiveTests object ID: " + System.identityHashCode(positiveTests));
+		System.out.println("DEBUG: testFiltered = " + testFiltered);
 		System.out.println("Filtering of the tests starts...");
+		
+		// ✅ Java 11 兼容性修复：TestFilter 在 Java 11 下可能失败
+		// 保存原始测试数量用于对比
+		int originalPositiveTestsCount = positiveTests.size();
+		
 		if (testFiltered) {
+			System.out.println("DEBUG: Entering testFiltered block");
 			Set<LCNode> fLines;
 			if (maxNumberOfModificationPoints != null) {
 				fLines = new HashSet<LCNode>();
@@ -494,9 +543,26 @@ public abstract class AbstractRepairProblem extends Problem {
 				FileUtils.writeLines(new File(faultyLinesInfoPath), lines);
 			}
 
-			TestFilterProcess tfp = new TestFilterProcess(fLines, faultyLinesInfoPath, positiveTests,
-					orgPosTestsInfoPath, binJavaDir, binTestDir, dependences, externalProjRoot, jvmPath);
-			positiveTests = tfp.getFilteredPositiveTests();
+			try {
+				TestFilterProcess tfp = new TestFilterProcess(fLines, faultyLinesInfoPath, positiveTests,
+						orgPosTestsInfoPath, binJavaDir, binTestDir, dependences, externalProjRoot, jvmPath);
+				Set<String> filteredTests = tfp.getFilteredPositiveTests();
+				
+				// ✅ 关键修复：如果过滤后测试为空，保留原始测试
+				if (filteredTests == null || filteredTests.isEmpty()) {
+					System.err.println("⚠️  WARNING: Test filtering returned 0 tests!");
+					System.err.println("   This is likely due to JaCoCo coverage collection failure in Java 11.");
+					System.err.println("   Keeping original " + originalPositiveTestsCount + " positive tests.");
+					System.err.println("   Recommendation: Set -DtestFiltered false to skip filtering.");
+				} else {
+					positiveTests = filteredTests;
+					System.out.println("✅ Test filtering succeeded: " + originalPositiveTestsCount + " → " + positiveTests.size() + " tests");
+				}
+			} catch (Exception e) {
+				System.err.println("⚠️  Test filtering failed with exception: " + e.getMessage());
+				System.err.println("   Keeping original " + originalPositiveTestsCount + " positive tests.");
+				e.printStackTrace();
+			}
 		}
 
 		if (finalTestsInfoPath != null) {
@@ -506,6 +572,7 @@ public abstract class AbstractRepairProblem extends Problem {
 			FileUtils.writeLines(new File(finalTestsInfoPath), finalTests);
 		}
 		
+		System.out.println("DEBUG: After all operations, positiveTests = " + positiveTests.size());
 		System.out.println("Number of positive tests considered: " + positiveTests.size() );
 		System.out.println("Filtering of the tests is finished!");
 	}
@@ -662,15 +729,38 @@ public abstract class AbstractRepairProblem extends Problem {
 	}
 
 	protected Set<String> getSamplePositiveTests() {
-		if (percentage == null || percentage == 1)
+		// ✅ 修复：如果测试过滤失败导致 positiveTests 为空，返回空集合
+		if (positiveTests == null || positiveTests.isEmpty()) {
+			System.err.println("⚠️  WARNING: No positive tests available for sampling!");
+			System.err.println("   This usually means test filtering failed in Java 11 environment.");
+			System.err.println("   Recommendation: Set -DtestFiltered false");
+			return new HashSet<String>();  // 返回空集合，避免 NullPointerException
+		}
+		
+		// ✅ 添加调试日志
+		System.out.println("DEBUG: getSamplePositiveTests() called");
+		System.out.println("  percentage = " + percentage);
+		System.out.println("  positiveTests.size() = " + positiveTests.size());
+		
+		if (percentage == null || percentage == 1) {
+			System.out.println("  Returning all " + positiveTests.size() + " tests (no sampling)");
 			return positiveTests;
-		else {
+		} else {
 			int num = (int) (positiveTests.size() * percentage);
+			System.out.println("  Calculated sample size: " + num + " (" + (percentage * 100) + "%)");
+			
+			if (num == 0 && !positiveTests.isEmpty()) {
+				// ✅ 修复：percentage 太小导致选中 0 个测试
+				num = 1;  // 至少选中 1 个测试
+				System.out.println("⚠️  Percentage too small, forcing at least 1 test");
+			}
 			List<String> tempList = new ArrayList<String>(positiveTests);
 			Collections.shuffle(tempList);
 			Set<String> samplePositiveTests = new HashSet<String>();
 			for (int i = 0; i < num; i++)
 				samplePositiveTests.add(tempList.get(i));
+			
+			System.out.println("✅ Sampled " + samplePositiveTests.size() + " tests from " + positiveTests.size());
 			return samplePositiveTests;
 		}
 	}
