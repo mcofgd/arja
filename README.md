@@ -1,6 +1,6 @@
 # ARJA (Java 11 升级版) - 自动化程序修复系统
 
-## 📖 项目概述
+##  项目概述
 
 ARJA (Adaptive Randomized Joint Exploration) 是一个基于多目标遗传编程（Genetic Programming, GP）的 Java 自动化程序修复（APR）工具。
 
@@ -22,7 +22,7 @@ ARJA 的设计基于以下核心思想：
 
 ---
 
-## ⚙️ 工作流程
+##  工作流程
 
 ARJA 的修复过程是一个自动化的演化循环：
 
@@ -42,7 +42,7 @@ ARJA 的修复过程是一个自动化的演化循环：
 
 ---
 
-## 🚀 升级与修复日志 (Upgrade & Fix History)
+##  升级与修复日志 (Upgrade & Fix History)
 
 本项目经历了一次完整的现代化改造。以下是详细的修改记录、原因及结果：
 
@@ -111,7 +111,7 @@ python3 batch_verify_patches.py
 
 ---
 
-## ⚠️ 注意事项
+##  注意事项
 
 1.  **JVM 参数**：直接使用 `java` 命令运行 jar 包时，**必须**添加以下参数，否则会报错：
     ```bash
@@ -120,12 +120,11 @@ python3 batch_verify_patches.py
 2.  **补丁应用**：生成的补丁文件通常包含绝对路径。在应用补丁时（使用 `patch` 命令），可能需要根据你的目录结构调整 `-p` 参数（如 `-p5`）。推荐使用 `batch_verify_patches.py`，它会自动处理路径剥离问题。
 3.  **超时设置**：对于大型项目（如 Math, Closure），建议增加 `-DwaitTime` 参数（默认 10 分钟可能不够），以免在找到解之前被强制终止。
 
-## 📂 目录结构说明
+##  目录结构说明
 
 *   `src/`: ARJA 源代码
 *   `bin/`: 编译后的 class 文件
 *   `lib/`: 项目依赖库
 *   `external/`: 外部依赖源码（如 GZoltar 修改版）
-*   `detail/`: **[重要]** 详细的升级文档和修复日志
 *   `test_arja_ns.sh`: 主运行脚本
 *   `batch_verify_patches.py`: 补丁验证工具
